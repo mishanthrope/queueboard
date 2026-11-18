@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - include:
+      file: changes/01-create-employees.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/02-create-orders.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/03-create-order-items.yaml
+      relativeToChangelogFile: true

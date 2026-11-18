@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: queueboard
+  autoconfigure:
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:queueboard}
+    username: ${DB_USERNAME:queueboard}
+    password: ${DB_PASSWORD:queueboard}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_batch_fetch_size: 50
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:local-dev-secret-change-me-0123456789abcdef}
+    expiration: ${JWT_EXPIRATION:PT8H}
+  poster:
+    application-secret: ${POSTER_APPLICATION_SECRET:local-dev-poster-secret}
+  orders:
+    paid-at-max-skew: ${PAID_AT_MAX_SKEW:PT2M}
+    prep-time:
+      overhead: PT7M
+      wrap-per-item: PT3M
+      grill: PT5M
+      grill-capacity: 5

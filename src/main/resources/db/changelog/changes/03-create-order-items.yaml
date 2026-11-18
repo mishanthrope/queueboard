@@ -1,0 +1,64 @@
+databaseChangeLog:
+  - changeSet:
+      id: 03-create-order-items
+      author: queueboard
+      changes:
+        - createTable:
+            tableName: order_items
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: order_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_order_items_order
+                    references: orders(id)
+                    deleteCascade: true
+              - column:
+                  name: product_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: order_items
+            indexName: idx_order_items_order_id
+            columns:
+              - column:
+                  name: order_id
+        - createTable:
+            tableName: order_item_modifiers
+            columns:
+              - column:
+                  name: order_item_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_order_item_modifiers_item
+                    references: order_items(id)
+                    deleteCascade: true
+              - column:
+                  name: position
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: modifier
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: order_item_modifiers
+            columnNames: order_item_id, position
+            constraintName: pk_order_item_modifiers
