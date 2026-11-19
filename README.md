@@ -119,26 +119,28 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 
 Тести написано на JUnit 5, AssertJ, Mockito, MockMvc, ArchUnit і Testcontainers (`postgres:17-alpine`). Тестові пакети повторюють чотири шари коду: `domain`, `application`, `infrastructure`, `presentation`; `ArchitectureTest`, `AbstractIntegrationTest` і `QueueboardApplicationTests` лежать у кореневому пакеті.
 
+Підхід до тестів відповідає CQS: **команди** (запис) перевіряються юніт-тестами на in-memory фейках репозиторіїв, **запити** (читання) — інтеграційними тестами через HTTP на справжній БД.
+
 ### Піраміда тестів
 
-Усього 278 тестів (рахунок за звітами surefire):
+Усього 304 тести (рахунок за звітами surefire):
 
 | Шар | Тестів | Як тестується |
 |---|---|---|
-| `domain` | 120 | звичайні JUnit/AssertJ без Spring і Mockito; репозиторії замінюють in-memory фейки `InMemoryOrderRepository` і `InMemoryEmployeeRepository` |
-| `application` | 72 | Mockito-моки портів (`OrderRepository`, `EmployeeRepository`, `PasswordHasher`, `TokenService`, `PosterClient`, `WebhookSignatureVerifier`), фіксований `Clock` |
+| `domain` | 122 | звичайні JUnit/AssertJ без Spring і Mockito; репозиторії замінюють in-memory фейки `InMemoryOrderRepository` і `InMemoryEmployeeRepository` |
+| `application` | 85 | обробники команд на тих самих фейках; Mockito лише для `PasswordHasher`, `TokenService`, `PosterClient`, `WebhookSignatureVerifier` і обробників, які треба змусити кинути виняток; фіксований `Clock` |
 | `infrastructure` | 44 | адаптери без Spring-контексту: JWT, md5-підпис, розбір даних Poster |
 | `presentation` (юніт) | 4 | `GlobalExceptionHandler` через standalone MockMvc |
-| інтеграційні | 33 | `@Tag("integration")`, весь застосунок на PostgreSQL у контейнері, HTTP через MockMvc |
-| архітектурні | 5 | ArchUnit: правила залежностей між шарами |
+| інтеграційні | 43 | `@Tag("integration")`, весь застосунок на PostgreSQL у контейнері, HTTP через MockMvc; тут перевіряються запити читання |
+| архітектурні | 6 | ArchUnit: правила залежностей між шарами |
 
-Без інтеграційних тестів виконується 245 тестів. Тести домену (120) разом із запуском Maven тривають близько 4,5 с (два вимірювання: 4,3 і 4,7 с), усі юніт-тести — близько 8,5 с, `ArchitectureTest` окремо — близько 5,3 с, повний `./mvnw verify` — близько 23,5 с. Більша частина цього часу — старт Maven і JVM.
+Без інтеграційних тестів виконується 261 тест. Тести домену (122) разом із запуском Maven тривають близько 5 с (два вимірювання: 4,3 і 5,7 с), усі юніт-тести — близько 9 с, `ArchitectureTest` окремо — близько 5,3 с, повний `./mvnw verify` — близько 26 с. Більша частина цього часу — старт Maven і JVM.
 
 Інтеграційні тести успадковують `AbstractIntegrationTest`: Spring-контекст і контейнер стартують один раз, перед кожним тестом таблиці очищаються (спершу `orders`, потім `employees`) через Spring Data репозиторії `SpringDataOrderRepository` і `SpringDataEmployeeRepository`. Підписані вебхуки Poster для тестів будує `SignedWebhooks` (JSON-тіло і `verify` = md5 із секретом із `PosterProperties`).
 
 ### Що покриває кожен клас
 
-**`domain`** (120)
+**`domain`** (122)
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
@@ -150,15 +152,24 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `OrderFactoryTest` | 22 | відмови `createFromPoster` (id чека, `paidAt` понад допуск, коментар, порожні позиції) і межові прийняті значення; дубль `posterCheckId`; `displayNumber` (порожній день, максимум + 1, межа місцевої півночі); `estimatedReadyAt` (порожня черга, хвіст у минулому, у майбутньому, найпізніший із черги, READY/ISSUED/CANCELLED не враховуються, кількості підсумовуються) |
 | `EmailTest` | 13 | нормалізація (пробіли, регістр), порожнє значення, неправильний формат, надто довге значення |
 | `EmployeeFactoryTest` | 9 | обрізання імені, межа 100 символів, порожнє ім'я, дубль email у іншому регістрі |
+| `OrderRepositoryTest` | 2 | `getById` повертає збережене замовлення, невідомий id → `OrderNotFoundError` |
 
-**`application`** (72)
+**`application`** (85): команди
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
-| `OrderServiceTest` | 36 | `createFromPoster` (відмови, межові значення, дубль, `displayNumber`, оцінка від хвоста черги); кожна статусна дія зберігає замовлення; `OrderNotFoundError` для невідомого id; `shiftPrepTime`; `getKitchenQueue`, `getHistory` |
-| `BoardServiceTest` | 12 | READY → `ready`, NEW/COOKING → `preparing`; `minutesLeft` округлюється вгору і не буває менше 0 |
-| `AuthServiceTest` | 9 | дубль email, нормалізація, пароль зберігається хешем із `PasswordHasher`, неправильний пароль, невідомий і некоректний email → `InvalidCredentialsError` |
-| `PosterWebhookServiceTest` | 15 | невірний підпис → `InvalidWebhookSignatureError`; інший `object`; `removed` (існуюче, видане, невідоме); уже існуюче замовлення; чек не оплачений; передача значень чека в `OrderService`; помилки домену, Poster і БД не ламають відповідь |
+| `OrderStatusCommandsTest` | 14 | `StartCooking`, `MarkReady`, `IssueOrder`, `CancelOrder`, `RestoreOrder`: стан замовлення в репозиторії після команди (статус і мітка), заборонена дія → `IllegalStatusTransitionError` без змін, невідомий id → `OrderNotFoundError`, чужі замовлення не змінюються |
+| `ShiftPrepTimeHandlerTest` | 4 | зсув `estimatedReadyAt` для NEW і COOKING в обидва боки; READY, ISSUED, CANCELLED не змінюються; порожня черга |
+| `CreateOrderFromPosterHandlerTest` | 26 | відмови (id чека, `paidAt`, коментар, порожні позиції, рядок команди з порушенням правил позиції) і межові значення; дубль `posterCheckId`; збережені позиції; `displayNumber`; `estimatedReadyAt` (порожня черга, хвіст у минулому, у майбутньому, друге замовлення після першого) |
+| `RegisterEmployeeHandlerTest` | 6 | повертається id нового працівника; нормалізація email і імені; зберігається хеш із `PasswordHasher`; дубль email в іншому регістрі → `DuplicateEmailError`; некоректний email або порожнє ім'я |
+| `ProcessPosterWebhookHandlerTest` | 19 | невірний підпис → `InvalidWebhookSignatureError`; інший `object`; `removed` (існуюче, видане, невідоме); уже існуюче замовлення; чек не оплачений; значення чека в команді `CreateOrderFromPoster`; стан репозиторію після вебхука; помилки домену, Poster і БД не ламають відповідь |
+
+**`application`**: запити
+
+| Клас | Тестів | Що перевіряє |
+|---|---|---|
+| `LoginHandlerTest` | 4 | токен для нормалізованого email; неправильний пароль, невідомий і некоректний email → `InvalidCredentialsError` |
+| `GetBoardHandlerTest` | 12 | групування рядків на `preparing` і `ready`; `minutesLeft` округлюється вгору і не буває менше 0 (фейк `BoardReadRepository`) |
 
 **`infrastructure`** (44)
 
@@ -168,15 +179,17 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `Md5WebhookSignatureVerifierTest` | 14 | вірний підпис (з `data` і без), приклад із `docs/api.md`, регістр hex, невірний або відсутній підпис і підписані поля |
 | `PosterClientAdapterTest` | 19 | чек не закрито або не оплачено → порожньо; розбір `date_close`, `num`, `modificator_name`, порожнього коментаря; помилкові дані → `PosterDataError` |
 
-**`presentation`** (4 юніт + 33 інтеграційні)
+**`presentation`** (4 юніт + 43 інтеграційні)
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
 | `GlobalExceptionHandlerTest` | 4 | непризначена `DomainError` і `ApplicationError` → 400, `OrderNotFoundError` → 404, непередбачений виняток → 500 |
 | `AuthIntegrationTest` | 8 | реєстрація 201 / 409 / 400, вхід 200 / 401; захищений ресурс без токена, з неправильним і з правильним токеном |
 | `PosterWebhookIntegrationTest` | 8 | підписаний вебхук створює замовлення з позиціями; повтор не дублює замовлення; `removed` скасовує, невідомий чек → 200; невірний або відсутній підпис → 401; зламаний JSON → 400; інший `object` ігнорується |
-| `OrderIntegrationTest` | 14 | життєвий цикл start → ready → issue, заборонена дія → 409, restore, невідомий id → 404, `DELETE` прибирає замовлення з кухні й табло; історія з фільтром, пагінацією і помилковими параметрами; `PATCH /api/orders/prep-time` (зсув, завершені не зсуваються, неправильне значення, без токена); `PUT` → не підтримується |
+| `OrderIntegrationTest` | 14 | життєвий цикл start → ready → issue, заборонена дія → 409, restore, невідомий id → 404, `DELETE` прибирає замовлення з кухні й табло; історія з фільтром за статусом, пагінацією і помилковими параметрами; `PATCH /api/orders/prep-time`; `PUT` → не підтримується |
+| `OrderQueryIntegrationTest` | 7 | `GET /api/orders/kitchen` (усі поля, позиції, склад: NEW/COOKING/READY без ISSUED і CANCELLED); `GET /api/orders/{id}` (`estimatedReadyAt` є в активного і `null` у завершеного); історія з `date` (місцева доба), з `date` + `status`, порядок «нові першими» |
 | `BoardIntegrationTest` | 2 | `GET /api/board` без токена (порожнє табло), групування на `preparing` і `ready` |
+| `BoardQueryIntegrationTest` | 3 | `minutesLeft` відповідає `estimatedReadyAt`; скасоване не показується; після видачі замовлення зникає з обох груп |
 | `QueueboardApplicationTests` | 1 | `contextLoads`: контекст стартує, схема Liquibase проходить валідацію Hibernate |
 
-**Архітектура** (5): `ArchitectureTest` перевіряє, що `domain` залежить лише від `java..` і `domain..`, `application` не залежить від `infrastructure` і `presentation`, `presentation` не залежить від `infrastructure`, `infrastructure` не залежить від `presentation`.
+**Архітектура** (6): `ArchitectureTest` перевіряє, що `domain` залежить лише від `java..` і `domain..`, `application` не залежить від `infrastructure` і `presentation`, `presentation` не залежить від `infrastructure` і від доменних репозиторіїв (`OrderRepository`, `EmployeeRepository`), `infrastructure` не залежить від `presentation`.

@@ -1,6 +1,13 @@
 package com.mishanthrope.queueboard.presentation.auth;
 
-import com.mishanthrope.queueboard.application.auth.AuthService;
+import com.mishanthrope.queueboard.application.auth.command.RegisterEmployee;
+import com.mishanthrope.queueboard.application.auth.command.RegisterEmployeeHandler;
+import com.mishanthrope.queueboard.application.auth.query.AuthToken;
+import com.mishanthrope.queueboard.application.auth.query.EmployeeView;
+import com.mishanthrope.queueboard.application.auth.query.GetEmployee;
+import com.mishanthrope.queueboard.application.auth.query.GetEmployeeHandler;
+import com.mishanthrope.queueboard.application.auth.query.Login;
+import com.mishanthrope.queueboard.application.auth.query.LoginHandler;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -15,18 +22,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final AuthService authService;
-    private final EmployeeResponseMapper mapper;
+    private final RegisterEmployeeHandler registerEmployee;
+    private final GetEmployeeHandler getEmployee;
+    private final LoginHandler login;
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public EmployeeResponse register(@Valid @RequestBody RegisterRequest request) {
-        return mapper.toResponse(
-                authService.register(request.email(), request.password(), request.fullName()));
+    public EmployeeView register(@Valid @RequestBody RegisterRequest request) {
+        long id = registerEmployee.handle(
+                new RegisterEmployee(request.email(), request.password(), request.fullName()));
+        return getEmployee.handle(new GetEmployee(id));
     }
 
     @PostMapping("/login")
-    public TokenResponse login(@Valid @RequestBody LoginRequest request) {
-        return new TokenResponse(authService.login(request.email(), request.password()));
+    public AuthToken login(@Valid @RequestBody LoginRequest request) {
+        return login.handle(new Login(request.email(), request.password()));
     }
 }

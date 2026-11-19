@@ -1,6 +1,6 @@
 package com.mishanthrope.queueboard.presentation.poster;
 
-import com.mishanthrope.queueboard.application.poster.PosterWebhookService;
+import com.mishanthrope.queueboard.application.poster.command.ProcessPosterWebhookHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,11 +12,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class PosterWebhookController {
 
-    private final PosterWebhookService webhookService;
+    private final ProcessPosterWebhookHandler processPosterWebhook;
     private final PosterWebhookMapper mapper;
 
     @PostMapping("/poster")
     public void receivePosterWebhook(@RequestBody PosterWebhookRequest request) {
-        webhookService.handle(mapper.toNotice(request));
+        processPosterWebhook.handle(mapper.toCommand(request));
     }
 }

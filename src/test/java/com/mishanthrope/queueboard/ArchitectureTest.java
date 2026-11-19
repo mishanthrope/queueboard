@@ -42,4 +42,12 @@ class ArchitectureTest {
     static final ArchRule infrastructureDoesNotDependOnPresentation = noClasses()
             .that().resideInAPackage(INFRASTRUCTURE)
             .should().dependOnClassesThat().resideInAPackage(PRESENTATION);
+
+    @ArchTest
+    static final ArchRule presentationDoesNotUseDomainRepositories = noClasses()
+            .that().resideInAPackage(PRESENTATION)
+            .should().dependOnClassesThat()
+            .haveFullyQualifiedName("com.mishanthrope.queueboard.domain.order.OrderRepository")
+            .orShould().dependOnClassesThat().haveFullyQualifiedName(
+                    "com.mishanthrope.queueboard.domain.employee.EmployeeRepository");
 }

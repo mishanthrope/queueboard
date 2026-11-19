@@ -2,7 +2,7 @@ package com.mishanthrope.queueboard.infrastructure.poster;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.mishanthrope.queueboard.application.poster.PosterWebhookNotice;
+import com.mishanthrope.queueboard.application.poster.command.ProcessPosterWebhook;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
@@ -28,10 +28,10 @@ class Md5WebhookSignatureVerifierTest {
                 .digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
-    private static PosterWebhookNotice notice(
+    private static ProcessPosterWebhook notice(
             String account, String object, Long objectId, String action, String time,
             String verify, String data) {
-        return new PosterWebhookNotice(account, object, objectId, action, time, verify, data);
+        return new ProcessPosterWebhook(account, object, objectId, action, time, verify, data);
     }
 
     static Stream<Arguments> unsignedWebhooks() {
@@ -59,7 +59,7 @@ class Md5WebhookSignatureVerifierTest {
 
     @Test
     void isValid_matchesKnownSignatureFromApiDocs() {
-        PosterWebhookNotice notice =
+        ProcessPosterWebhook notice =
                 notice("shawarma", "transaction", 48213L, "changed", "1794919500",
                 KNOWN_SIGNATURE, null);
 
@@ -69,7 +69,7 @@ class Md5WebhookSignatureVerifierTest {
     @Test
     void isValid_withData_includesDataInSignedString() throws Exception {
         String signature = md5("shawarma;transaction;7;changed;{\"a\":1};10;" + SECRET);
-        PosterWebhookNotice notice =
+        ProcessPosterWebhook notice =
                 notice("shawarma", "transaction", 7L, "changed", "10", signature,
                 "{\"a\":1}");
 
@@ -79,7 +79,7 @@ class Md5WebhookSignatureVerifierTest {
     @Test
     void isValid_withDataSignedWithoutData_isFalse() throws Exception {
         String signature = md5("shawarma;transaction;7;changed;10;" + SECRET);
-        PosterWebhookNotice notice =
+        ProcessPosterWebhook notice =
                 notice("shawarma", "transaction", 7L, "changed", "10", signature,
                 "{\"a\":1}");
 
@@ -89,7 +89,7 @@ class Md5WebhookSignatureVerifierTest {
     @Test
     void isValid_withEmptyData_ignoresData() throws Exception {
         String signature = md5("shawarma;transaction;7;changed;10;" + SECRET);
-        PosterWebhookNotice notice =
+        ProcessPosterWebhook notice =
                 notice("shawarma", "transaction", 7L, "changed", "10", signature, "");
 
         assertThat(verifier.isValid(notice)).isTrue();
@@ -97,8 +97,8 @@ class Md5WebhookSignatureVerifierTest {
 
     @Test
     void isValid_withUpperCaseHex_isTrue() {
-        PosterWebhookNotice valid = webhooks.webhook("transaction", 5, "changed");
-        PosterWebhookNotice upper =
+        ProcessPosterWebhook valid = webhooks.webhook("transaction", 5, "changed");
+        ProcessPosterWebhook upper =
                 notice(valid.account(), valid.object(), valid.objectId(), valid.action(),
                 valid.time(), valid.verify().toUpperCase(Locale.ROOT), null);
 
@@ -114,7 +114,7 @@ class Md5WebhookSignatureVerifierTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("unsignedWebhooks")
-    void isValid_withBadWebhook_isFalse(String description, PosterWebhookNotice notice) {
+    void isValid_withBadWebhook_isFalse(String description, ProcessPosterWebhook notice) {
         assertThat(verifier.isValid(notice)).isFalse();
     }
 }

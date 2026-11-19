@@ -28,7 +28,7 @@ class OrderFactoryTest {
 
     @BeforeEach
     void setUp() {
-        repository = new InMemoryOrderRepository(KYIV);
+        repository = new InMemoryOrderRepository();
         var settings = new KitchenSettings(
                 Duration.ofMinutes(7), Duration.ofMinutes(3), Duration.ofMinutes(5), 5);
         factory = new OrderFactory(
@@ -121,7 +121,7 @@ class OrderFactoryTest {
     void createFromPoster_doesNotSaveTheOrder() {
         create();
 
-        assertThat(repository.findActive()).isEmpty();
+        assertThat(repository.findByPosterCheckId(100L)).isEmpty();
     }
 
     @Test

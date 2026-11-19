@@ -1,8 +1,26 @@
 package com.mishanthrope.queueboard.presentation.order;
 
-import com.mishanthrope.queueboard.application.order.OrderService;
+import com.mishanthrope.queueboard.application.common.PageView;
+import com.mishanthrope.queueboard.application.order.command.CancelOrder;
+import com.mishanthrope.queueboard.application.order.command.CancelOrderHandler;
+import com.mishanthrope.queueboard.application.order.command.IssueOrder;
+import com.mishanthrope.queueboard.application.order.command.IssueOrderHandler;
+import com.mishanthrope.queueboard.application.order.command.MarkReady;
+import com.mishanthrope.queueboard.application.order.command.MarkReadyHandler;
+import com.mishanthrope.queueboard.application.order.command.RestoreOrder;
+import com.mishanthrope.queueboard.application.order.command.RestoreOrderHandler;
+import com.mishanthrope.queueboard.application.order.command.ShiftPrepTime;
+import com.mishanthrope.queueboard.application.order.command.ShiftPrepTimeHandler;
+import com.mishanthrope.queueboard.application.order.command.StartCooking;
+import com.mishanthrope.queueboard.application.order.command.StartCookingHandler;
+import com.mishanthrope.queueboard.application.order.query.GetKitchenQueue;
+import com.mishanthrope.queueboard.application.order.query.GetKitchenQueueHandler;
+import com.mishanthrope.queueboard.application.order.query.GetOrderDetails;
+import com.mishanthrope.queueboard.application.order.query.GetOrderDetailsHandler;
+import com.mishanthrope.queueboard.application.order.query.GetOrderHistory;
+import com.mishanthrope.queueboard.application.order.query.GetOrderHistoryHandler;
+import com.mishanthrope.queueboard.application.order.query.OrderView;
 import com.mishanthrope.queueboard.domain.order.OrderStatus;
-import com.mishanthrope.queueboard.presentation.common.PageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -27,59 +45,69 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class OrderController {
 
-    private final OrderService orderService;
-    private final OrderResponseMapper mapper;
+    private final GetKitchenQueueHandler getKitchenQueue;
+    private final GetOrderDetailsHandler getOrderDetails;
+    private final GetOrderHistoryHandler getOrderHistory;
+    private final StartCookingHandler startCooking;
+    private final MarkReadyHandler markReady;
+    private final IssueOrderHandler issueOrder;
+    private final RestoreOrderHandler restoreOrder;
+    private final CancelOrderHandler cancelOrder;
+    private final ShiftPrepTimeHandler shiftPrepTime;
 
     @GetMapping("/kitchen")
-    public List<OrderResponse> getKitchenQueue() {
-        return orderService.getKitchenQueue().stream().map(mapper::toResponse).toList();
+    public List<OrderView> getKitchenQueue() {
+        return getKitchenQueue.handle(new GetKitchenQueue());
     }
 
     @GetMapping
-    public PageResponse<OrderResponse> getHistory(
+    public PageView<OrderView> getHistory(
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam(required = false) OrderStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return PageResponse.of(
-                orderService.getHistory(date, status, page, size), mapper::toResponse);
+        return getOrderHistory.handle(new GetOrderHistory(date, status, page, size));
     }
 
     @GetMapping("/{id}")
-    public OrderResponse getOrder(@PathVariable Long id) {
-        return mapper.toResponse(orderService.getOrder(id));
+    public OrderView getOrder(@PathVariable long id) {
+        return getOrderDetails.handle(new GetOrderDetails(id));
     }
 
     @PatchMapping("/prep-time")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void shiftPrepTime(@Valid @RequestBody ShiftPrepTimeRequest request) {
-        orderService.shiftPrepTime(request.deltaMinutes());
+        shiftPrepTime.handle(new ShiftPrepTime(request.deltaMinutes()));
     }
 
     @PostMapping("/{id}/start")
-    public OrderResponse startCooking(@PathVariable Long id) {
-        return mapper.toResponse(orderService.startCooking(id));
+    public OrderView startCooking(@PathVariable long id) {
+        startCooking.handle(new StartCooking(id));
+        return getOrderDetails.handle(new GetOrderDetails(id));
     }
 
     @PostMapping("/{id}/ready")
-    public OrderResponse markReady(@PathVariable Long id) {
-        return mapper.toResponse(orderService.markReady(id));
+    public OrderView markReady(@PathVariable long id) {
+        markReady.handle(new MarkReady(id));
+        return getOrderDetails.handle(new GetOrderDetails(id));
     }
 
     @PostMapping("/{id}/issue")
-    public OrderResponse issue(@PathVariable Long id) {
-        return mapper.toResponse(orderService.issue(id));
+    public OrderView issue(@PathVariable long id) {
+        issueOrder.handle(new IssueOrder(id));
+        return getOrderDetails.handle(new GetOrderDetails(id));
     }
 
     @PostMapping("/{id}/restore")
-    public OrderResponse restore(@PathVariable Long id) {
-        return mapper.toResponse(orderService.restore(id));
+    public OrderView restore(@PathVariable long id) {
+        restoreOrder.handle(new RestoreOrder(id));
+        return getOrderDetails.handle(new GetOrderDetails(id));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void cancel(@PathVariable Long id) {
-        orderService.cancel(id);
+    public void cancel(@PathVariable long id) {
+        cancelOrder.handle(new CancelOrder(id));
     }
 }

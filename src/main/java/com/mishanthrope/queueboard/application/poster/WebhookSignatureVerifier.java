@@ -1,6 +1,8 @@
 package com.mishanthrope.queueboard.application.poster;
 
+import com.mishanthrope.queueboard.application.poster.command.ProcessPosterWebhook;
+
 public interface WebhookSignatureVerifier {
 
-    boolean isValid(PosterWebhookNotice notice);
+    boolean isValid(ProcessPosterWebhook command);
 }

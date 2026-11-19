@@ -1,7 +1,8 @@
 package com.mishanthrope.queueboard.presentation.board;
 
-import com.mishanthrope.queueboard.application.board.BoardResponse;
-import com.mishanthrope.queueboard.application.board.BoardService;
+import com.mishanthrope.queueboard.application.board.query.BoardView;
+import com.mishanthrope.queueboard.application.board.query.GetBoard;
+import com.mishanthrope.queueboard.application.board.query.GetBoardHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,10 +13,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class BoardController {
 
-    private final BoardService boardService;
+    private final GetBoardHandler getBoard;
 
     @GetMapping
-    public BoardResponse getBoard() {
-        return boardService.getBoard();
+    public BoardView getBoard() {
+        return getBoard.handle(new GetBoard());
     }
 }

@@ -1,5 +1,6 @@
 package com.mishanthrope.queueboard.infrastructure.persistence.order;
 
+import com.mishanthrope.queueboard.application.board.query.BoardRow;
 import com.mishanthrope.queueboard.domain.order.OrderStatus;
 import java.time.Instant;
 import java.util.Collection;
@@ -33,4 +34,9 @@ public interface SpringDataOrderRepository extends JpaRepository<OrderEntity, Lo
 
     Page<OrderEntity> findAllByStatusAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
             OrderStatus status, Instant from, Instant to, Pageable pageable);
+
+    @Query("select new com.mishanthrope.queueboard.application.board.query.BoardRow("
+            + "o.displayNumber, o.status, o.estimatedReadyAt) "
+            + "from OrderEntity o where o.status in :statuses order by o.paidAt asc")
+    List<BoardRow> findBoardRows(@Param("statuses") Collection<OrderStatus> statuses);
 }

@@ -1,6 +1,6 @@
 package com.mishanthrope.queueboard.infrastructure.poster;
 
-import com.mishanthrope.queueboard.application.poster.PosterWebhookNotice;
+import com.mishanthrope.queueboard.application.poster.command.ProcessPosterWebhook;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -22,8 +22,8 @@ public final class SignedWebhooks {
                 secret));
     }
 
-    public PosterWebhookNotice webhook(String object, long objectId, String action) {
-        return new PosterWebhookNotice(ACCOUNT, object, objectId, action, TIME,
+    public ProcessPosterWebhook webhook(String object, long objectId, String action) {
+        return new ProcessPosterWebhook(ACCOUNT, object, objectId, action, TIME,
                 signature(object, objectId, action), null);
     }
 

@@ -5,6 +5,7 @@ import com.mishanthrope.queueboard.application.common.ApplicationError;
 import com.mishanthrope.queueboard.application.poster.InvalidWebhookSignatureError;
 import com.mishanthrope.queueboard.domain.common.DomainError;
 import com.mishanthrope.queueboard.domain.employee.DuplicateEmailError;
+import com.mishanthrope.queueboard.domain.employee.EmployeeNotFoundError;
 import com.mishanthrope.queueboard.domain.employee.InvalidEmployeeError;
 import com.mishanthrope.queueboard.domain.order.DuplicatePosterCheckError;
 import com.mishanthrope.queueboard.domain.order.IllegalStatusTransitionError;
@@ -32,8 +33,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
-    @ExceptionHandler(OrderNotFoundError.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(OrderNotFoundError e) {
+    @ExceptionHandler({OrderNotFoundError.class, EmployeeNotFoundError.class})
+    public ResponseEntity<ErrorResponse> handleNotFound(RuntimeException e) {
         return error(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
