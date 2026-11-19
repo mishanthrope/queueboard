@@ -4,11 +4,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
-import com.mishanthrope.queueboard.employee.repository.EmployeeRepository;
-import com.mishanthrope.queueboard.order.model.Order;
-import com.mishanthrope.queueboard.order.repository.OrderRepository;
-import com.mishanthrope.queueboard.poster.SignedWebhooks;
-import com.mishanthrope.queueboard.poster.config.PosterProperties;
+import com.mishanthrope.queueboard.infrastructure.persistence.employee.SpringDataEmployeeRepository;
+import com.mishanthrope.queueboard.infrastructure.persistence.order.OrderEntity;
+import com.mishanthrope.queueboard.infrastructure.persistence.order.SpringDataOrderRepository;
+import com.mishanthrope.queueboard.infrastructure.poster.PosterProperties;
+import com.mishanthrope.queueboard.infrastructure.poster.SignedWebhooks;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,10 +31,10 @@ public abstract class AbstractIntegrationTest {
     protected MockMvc mockMvc;
 
     @Autowired
-    protected OrderRepository orderRepository;
+    protected SpringDataOrderRepository orderEntities;
 
     @Autowired
-    protected EmployeeRepository employeeRepository;
+    protected SpringDataEmployeeRepository employeeEntities;
 
     protected SignedWebhooks webhooks;
 
@@ -43,8 +43,8 @@ public abstract class AbstractIntegrationTest {
 
     @BeforeEach
     protected void cleanDatabase() {
-        orderRepository.deleteAll();
-        employeeRepository.deleteAll();
+        orderEntities.deleteAll();
+        employeeEntities.deleteAll();
         webhooks = new SignedWebhooks(posterProperties);
     }
 
@@ -55,9 +55,9 @@ public abstract class AbstractIntegrationTest {
                 .andExpect(status().isOk());
     }
 
-    protected Order createOrder(long posterCheckId) throws Exception {
+    protected OrderEntity createOrder(long posterCheckId) throws Exception {
         sendWebhook("transaction", posterCheckId, "changed");
-        return orderRepository.findByPosterCheckId(posterCheckId).orElseThrow();
+        return orderEntities.findByPosterCheckId(posterCheckId).orElseThrow();
     }
 
     protected String registerAndLogin() throws Exception {
