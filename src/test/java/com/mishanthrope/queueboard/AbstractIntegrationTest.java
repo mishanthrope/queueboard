@@ -4,11 +4,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
-import com.mishanthrope.queueboard.infrastructure.persistence.employee.SpringDataEmployeeRepository;
-import com.mishanthrope.queueboard.infrastructure.persistence.order.OrderEntity;
-import com.mishanthrope.queueboard.infrastructure.persistence.order.SpringDataOrderRepository;
-import com.mishanthrope.queueboard.infrastructure.poster.PosterProperties;
-import com.mishanthrope.queueboard.infrastructure.poster.SignedWebhooks;
+import com.mishanthrope.queueboard.core.infrastructure.persistence.employee.SpringDataEmployeeRepository;
+import com.mishanthrope.queueboard.core.infrastructure.persistence.order.OrderEntity;
+import com.mishanthrope.queueboard.core.infrastructure.persistence.order.SpringDataOrderRepository;
+import com.mishanthrope.queueboard.core.infrastructure.poster.PosterProperties;
+import com.mishanthrope.queueboard.core.infrastructure.poster.SignedWebhooks;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;

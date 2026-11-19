@@ -13,63 +13,98 @@ import com.tngtech.archunit.lang.ArchRule;
         importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
-    private static final String DOMAIN = "com.mishanthrope.queueboard.domain..";
-    private static final String APPLICATION = "com.mishanthrope.queueboard.application..";
-    private static final String INFRASTRUCTURE = "com.mishanthrope.queueboard.infrastructure..";
-    private static final String PRESENTATION = "com.mishanthrope.queueboard.presentation..";
-    private static final String ANALYTICS = "com.mishanthrope.queueboard.analytics..";
-    private static final String ANALYTICS_API = "com.mishanthrope.queueboard.analytics.api..";
-    private static final String EVENTS = "com.mishanthrope.queueboard.application.order.event..";
-    private static final String INFRASTRUCTURE_EVENT =
-            "com.mishanthrope.queueboard.infrastructure.event..";
+    private static final String ROOT = "com.mishanthrope.queueboard.";
+    private static final String CORE_DOMAIN = ROOT + "core.domain..";
+    private static final String CORE_APPLICATION = ROOT + "core.application..";
+    private static final String CORE_INFRASTRUCTURE = ROOT + "core.infrastructure..";
+    private static final String CORE_PRESENTATION = ROOT + "core.presentation..";
+    private static final String CORE = ROOT + "core..";
+    private static final String CORE_EVENTS = ROOT + "core.events..";
+    private static final String ANALYTICS = ROOT + "analytics..";
+    private static final String ANALYTICS_DOMAIN = ROOT + "analytics.domain..";
+    private static final String ANALYTICS_APPLICATION = ROOT + "analytics.application..";
+    private static final String ANALYTICS_INFRASTRUCTURE = ROOT + "analytics.infrastructure..";
+    private static final String ANALYTICS_PRESENTATION = ROOT + "analytics.presentation..";
+    private static final String ANALYTICS_ACL = ROOT + "analytics.infrastructure.acl..";
+
+    // Core layers
 
     @ArchTest
-    static final ArchRule domainDependsOnlyOnJavaAndItself = classes()
-            .that().resideInAPackage(DOMAIN)
-            .should().onlyDependOnClassesThat().resideInAnyPackage("java..", DOMAIN);
+    static final ArchRule coreDomainDependsOnlyOnJavaAndItself = classes()
+            .that().resideInAPackage(CORE_DOMAIN)
+            .should().onlyDependOnClassesThat().resideInAnyPackage("java..", CORE_DOMAIN);
 
     @ArchTest
-    static final ArchRule applicationDoesNotDependOnInfrastructure = noClasses()
-            .that().resideInAPackage(APPLICATION)
-            .should().dependOnClassesThat().resideInAPackage(INFRASTRUCTURE);
+    static final ArchRule coreApplicationDoesNotDependOnInfrastructure = noClasses()
+            .that().resideInAPackage(CORE_APPLICATION)
+            .should().dependOnClassesThat().resideInAPackage(CORE_INFRASTRUCTURE);
 
     @ArchTest
-    static final ArchRule applicationDoesNotDependOnPresentation = noClasses()
-            .that().resideInAPackage(APPLICATION)
-            .should().dependOnClassesThat().resideInAPackage(PRESENTATION);
+    static final ArchRule coreApplicationDoesNotDependOnPresentation = noClasses()
+            .that().resideInAPackage(CORE_APPLICATION)
+            .should().dependOnClassesThat().resideInAPackage(CORE_PRESENTATION);
 
     @ArchTest
-    static final ArchRule presentationDoesNotDependOnInfrastructure = noClasses()
-            .that().resideInAPackage(PRESENTATION)
-            .should().dependOnClassesThat().resideInAPackage(INFRASTRUCTURE);
+    static final ArchRule corePresentationDoesNotDependOnInfrastructure = noClasses()
+            .that().resideInAPackage(CORE_PRESENTATION)
+            .should().dependOnClassesThat().resideInAPackage(CORE_INFRASTRUCTURE);
 
     @ArchTest
-    static final ArchRule infrastructureDoesNotDependOnPresentation = noClasses()
-            .that().resideInAPackage(INFRASTRUCTURE)
-            .should().dependOnClassesThat().resideInAPackage(PRESENTATION);
+    static final ArchRule coreInfrastructureDoesNotDependOnPresentation = noClasses()
+            .that().resideInAPackage(CORE_INFRASTRUCTURE)
+            .should().dependOnClassesThat().resideInAPackage(CORE_PRESENTATION);
 
     @ArchTest
-    static final ArchRule presentationDoesNotUseDomainRepositories = noClasses()
-            .that().resideInAPackage(PRESENTATION)
-            .should().dependOnClassesThat()
-            .haveFullyQualifiedName("com.mishanthrope.queueboard.domain.order.OrderRepository")
+    static final ArchRule corePresentationDoesNotUseDomainRepositories = noClasses()
+            .that().resideInAPackage(CORE_PRESENTATION)
+            .should().dependOnClassesThat().haveFullyQualifiedName(
+                    ROOT + "core.domain.order.OrderRepository")
             .orShould().dependOnClassesThat().haveFullyQualifiedName(
-                    "com.mishanthrope.queueboard.domain.employee.EmployeeRepository");
+                    ROOT + "core.domain.employee.EmployeeRepository");
+
+    // Analytics layers
 
     @ArchTest
-    static final ArchRule analyticsDependsOnlyOnItsAllowedPackages = classes()
-            .that().resideInAPackage(ANALYTICS)
-            .should().onlyDependOnClassesThat().resideInAnyPackage(
-                    "java..", "org.springframework..", "jakarta..", "lombok..", "org.slf4j..",
-                    ANALYTICS, EVENTS);
+    static final ArchRule analyticsDomainDependsOnlyOnJavaAndItself = classes()
+            .that().resideInAPackage(ANALYTICS_DOMAIN)
+            .should().onlyDependOnClassesThat()
+            .resideInAnyPackage("java..", ANALYTICS_DOMAIN);
 
     @ArchTest
-    static final ArchRule coreDoesNotDependOnAnalytics = noClasses()
-            .that().resideInAnyPackage(DOMAIN, APPLICATION, PRESENTATION)
+    static final ArchRule analyticsApplicationDoesNotDependOnInfrastructureOrPresentation =
+            noClasses()
+                    .that().resideInAPackage(ANALYTICS_APPLICATION)
+                    .should().dependOnClassesThat().resideInAnyPackage(
+                            ANALYTICS_INFRASTRUCTURE, ANALYTICS_PRESENTATION);
+
+    @ArchTest
+    static final ArchRule analyticsPresentationDoesNotDependOnInfrastructureOrDomain =
+            noClasses()
+                    .that().resideInAPackage(ANALYTICS_PRESENTATION)
+                    .should().dependOnClassesThat().resideInAnyPackage(
+                            ANALYTICS_INFRASTRUCTURE, ANALYTICS_DOMAIN);
+
+    @ArchTest
+    static final ArchRule analyticsInfrastructureDoesNotDependOnPresentation = noClasses()
+            .that().resideInAPackage(ANALYTICS_INFRASTRUCTURE)
+            .should().dependOnClassesThat().resideInAPackage(ANALYTICS_PRESENTATION);
+
+    // Between modules
+
+    @ArchTest
+    static final ArchRule nothingInCoreDependsOnAnalytics = noClasses()
+            .that().resideInAPackage(CORE)
             .should().dependOnClassesThat().resideInAPackage(ANALYTICS);
 
     @ArchTest
-    static final ArchRule onlyInfrastructureEventUsesAnalyticsApi = noClasses()
-            .that().resideOutsideOfPackages(ANALYTICS, INFRASTRUCTURE_EVENT)
-            .should().dependOnClassesThat().resideInAPackage(ANALYTICS_API);
+    static final ArchRule onlyTheAclDependsOnCoreEvents = noClasses()
+            .that().resideInAPackage(ANALYTICS)
+            .and().resideOutsideOfPackage(ANALYTICS_ACL)
+            .should().dependOnClassesThat().resideInAPackage(CORE_EVENTS);
+
+    @ArchTest
+    static final ArchRule analyticsDependsOnCoreOnlyThroughEvents = noClasses()
+            .that().resideInAPackage(ANALYTICS)
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    CORE_DOMAIN, CORE_APPLICATION, CORE_INFRASTRUCTURE, CORE_PRESENTATION);
 }

@@ -1,0 +1,30 @@
+@startuml
+title <size:24>Analytics</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("QueueboardApplication_boundary", "QueueboardApplication", $tags="") {
+  Container_Boundary("QueueboardApplication.QueueboardApplication_boundary", "QueueboardApplication", $tags="") {
+    Component(QueueboardApplication.QueueboardApplication.Core, "Core", $techn="Module", $descr="", $tags="", $link="")
+    Component(QueueboardApplication.QueueboardApplication.Analytics, "Analytics", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(QueueboardApplication.QueueboardApplication.Analytics, QueueboardApplication.QueueboardApplication.Core, "listens to", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

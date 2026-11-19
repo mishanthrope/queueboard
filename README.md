@@ -1,6 +1,6 @@
 # Queueboard — табло черги замовлень
 
-Бекенд системи відображення черги замовлень для шаурмічної (лабораторна робота 1 з курсу архітектури ПЗ).
+Бекенд системи відображення черги замовлень для шаурмічної (навчальний проєкт з курсу архітектури ПЗ; поточний стан — лабораторна 5).
 
 - **Кухонний екран** — повний склад активних замовлень із модифікаторами та коментарями, дії зі статусами.
 - **Табло для відвідувачів** (публічне) — номери замовлень у групах «Готується» (з орієнтовним часом очікування) та «Готово».
@@ -8,9 +8,27 @@
 
 Специфікація: [`docs/use-cases.md`](docs/use-cases.md) (юзкейси) та [`docs/api.md`](docs/api.md) (REST API).
 
+## Модулі
+
+Застосунок — модульний моноліт на Spring Modulith з двома модулями; усередині кожного ті самі чотири шари (`domain`, `application`, `infrastructure`, `presentation`):
+
+```
+com.mishanthrope.queueboard
+├── QueueboardApplication
+├── core/                  модуль «Core»: замовлення, кухня, табло, автентифікація, Poster
+│   ├── events/            ПУБЛІЧНИЙ КОНТРАКТ: OrderEvent і шість подій
+│   └── domain/ application/ infrastructure/ presentation/
+└── analytics/             модуль «Analytics»: статистика
+    ├── api/               ПУБЛІЧНИЙ КОНТРАКТ: StatsApi, DailyStats
+    ├── domain/ application/ presentation/
+    └── infrastructure/    persistence/, acl/ (CoreEventListener, CoreEventTranslator), config/
+```
+
+Core не залежить від Analytics. Analytics бачить лише `core.events`, і тільки в шарі ACL (`analytics.infrastructure.acl`). Події йдуть асинхронно: команда Core записує публікацію в реєстр `event_publication` (Spring Modulith) у своїй транзакції, а `@ApplicationModuleListener` в Analytics обробляє її після коміту. Межі перевіряють `ModularityTest` (`ApplicationModules.verify()`) і `ArchitectureTest`; діаграма модулів — у [`docs/architecture/`](docs/architecture/), обґрунтування — в [`docs/adr/0002-module-boundaries.md`](docs/adr/0002-module-boundaries.md).
+
 ## Стек
 
-Java 21, Spring Boot 4 (Web MVC, Data JPA, Validation, Security), PostgreSQL, Liquibase, JWT (jjwt), MapStruct, Lombok, Checkstyle.
+Java 21, Spring Boot 4 (Web MVC, Data JPA, Validation, Security), Spring Modulith 2.1, PostgreSQL, Liquibase, JWT (jjwt), MapStruct, Lombok, Checkstyle.
 
 ## Вимоги
 
@@ -55,7 +73,6 @@ Java 21, Spring Boot 4 (Web MVC, Data JPA, Validation, Security), PostgreSQL, Li
 | `JWT_EXPIRATION` | `PT8H` | Час життя токена (ISO-8601 duration) |
 | `POSTER_APPLICATION_SECRET` | `local-dev-poster-secret` | Секрет застосунку Poster для перевірки підпису вебхуків |
 | `PAID_AT_MAX_SKEW` | `PT2M` | Наскільки `paidAt` може випереджати годинник сервера |
-| `ANALYTICS_MODE` | `async` | Спосіб передачі подій аналітиці: `sync` або `async` (див. «Статистика») |
 | `API_URL` | `http://localhost:8080` | Адреса застосунку (лише для `scripts/poster-mock.sh`) |
 
 Пароль БД у `docker-compose` застосовується під час першого створення тому; щоб змінити його пізніше, видаліть том: `docker compose down -v`.
@@ -99,19 +116,19 @@ curl -s $API/api/board
 
 `GET /api/stats?date=2026-11-17` (токен потрібен, `date` необов'язковий, за замовчуванням сьогодні) повертає за добу: кількість прийнятих, виданих і скасованих замовлень, середній час приготування, очікування і похибку оцінки (хвилини), кількість дій кухаря (`COOKING_STARTED`, `READY`, `ISSUED`, `CANCELLED`, `RESTORED`) і до 10 найпопулярніших модифікаторів. Детально — у [`docs/api.md`](docs/api.md) (UC-12).
 
-Статистику збирає окремий компонент `analytics`, який отримує події від обробників команд (`application/order/event`). Спосіб доставки перемикається в `application.yaml` або змінною `ANALYTICS_MODE`:
+Статистику збирає модуль `analytics` з подій модуля Core (див. «Модулі»). Статистика узгоджується зрештою (eventual consistency): відповідь команди не чекає на аналітику, а зміни у статистиці з'являються через десятки мілісекунд. Режиму синхронної доставки більше немає (він лишився під тегом `lab4`), властивості `app.analytics.mode` теж немає.
 
 | Налаштування | За замовчуванням | Опис |
 |---|---|---|
-| `app.analytics.mode` | `async` | `async` — подія йде після коміту команди в окремому потоці, відповідь API не чекає на аналітику; `sync` — аналітика викликається прямо в потоці команди, збій аналітики лише логується |
-| `app.analytics.simulated-delay` | `PT0S` | Штучна затримка аналітики (для порівняння режимів) |
-| `app.analytics.fail` | `false` | Аналітика кидає виняток перед записом |
+| `app.analytics.simulated-delay` | `PT0S` | Штучна затримка обробки події в Analytics (щоб побачити відставання статистики) |
+| `app.analytics.fail` | `false` | Analytics кидає виняток перед записом: публікація лишається в реєстрі незавершеною |
+| `spring.modulith.events.republish-outstanding-events-on-restart` | `true` | Незавершені публікації доставляються повторно під час старту |
 
 ```bash
-java -jar target/queueboard-0.0.1-SNAPSHOT.jar --app.analytics.mode=sync --app.analytics.simulated-delay=PT0.5S
+java -jar target/queueboard-0.0.1-SNAPSHOT.jar --app.analytics.simulated-delay=PT0.5S
 ```
 
-Порівняння режимів з вимірюваннями — у [`docs/analysis/lab4.md`](docs/analysis/lab4.md).
+Стан доставки видно в таблиці `event_publication` (`status`: `PUBLISHED`, `PROCESSING`, `COMPLETED`, `FAILED`, `RESUBMITTED`; завершені публікації лишаються в таблиці). Повторна доставка однієї події нічого не змінює: Analytics ідемпотентна за `eventId`. Вимірювання — у [`docs/analysis/lab5.md`](docs/analysis/lab5.md).
 
 ## Мок Poster
 
@@ -131,35 +148,39 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 ```bash
 ./mvnw test                                                     # усі тести (потрібен Docker для Testcontainers)
 ./mvnw test -DexcludedGroups=integration                        # без інтеграційних, Docker не потрібен
-./mvnw test -Dtest='com.mishanthrope.queueboard.domain.**'      # лише тести домену, Docker не потрібен
-./mvnw test -Dtest=ArchitectureTest                             # лише перевірка залежностей між шарами
+./mvnw test -Dtest='com.mishanthrope.queueboard.core.domain.**'      # лише тести домену Core, Docker не потрібен
+./mvnw test -Dtest='ArchitectureTest,ModularityTest'            # лише перевірка шарів і меж модулів
 ./mvnw verify                                                   # Checkstyle + усі тести
 ```
 
-Тести написано на JUnit 5, AssertJ, Mockito, MockMvc, ArchUnit і Testcontainers (`postgres:17-alpine`). Тестові пакети повторюють чотири шари коду: `domain`, `application`, `infrastructure`, `presentation`; `ArchitectureTest`, `AbstractIntegrationTest` і `QueueboardApplicationTests` лежать у кореневому пакеті.
+Тести написано на JUnit 5, AssertJ, Mockito, MockMvc, ArchUnit, Spring Modulith, Awaitility і Testcontainers (`postgres:17-alpine`). Тестові пакети повторюють структуру коду: `core.domain`, `core.application`, `core.infrastructure`, `core.presentation` і `analytics.*`; `ArchitectureTest`, `ModularityTest`, `AbstractIntegrationTest` і `QueueboardApplicationTests` лежать у кореневому пакеті.
 
 Підхід до тестів відповідає CQS: **команди** (запис) перевіряються юніт-тестами на in-memory фейках репозиторіїв, **запити** (читання) — інтеграційними тестами через HTTP на справжній БД.
 
 ### Піраміда тестів
 
-Усього 344 тести (рахунок за звітами surefire):
+Усього 365 тестів (рахунок за звітами surefire):
 
-| Шар | Тестів | Як тестується |
+| Модуль / шар | Тестів | Як тестується |
 |---|---|---|
-| `domain` | 122 | звичайні JUnit/AssertJ без Spring і Mockito; репозиторії замінюють in-memory фейки `InMemoryOrderRepository` і `InMemoryEmployeeRepository` |
-| `application` | 100 | обробники команд на тих самих фейках; Mockito лише для `PasswordHasher`, `TokenService`, `PosterClient`, `WebhookSignatureVerifier` і обробників, які треба змусити кинути виняток; фіксований `Clock` |
-| `infrastructure` | 44 | адаптери без Spring-контексту: JWT, md5-підпис, розбір даних Poster |
-| `presentation` (юніт) | 4 | `GlobalExceptionHandler` через standalone MockMvc |
-| інтеграційні | 65 | `@Tag("integration")`, весь застосунок на PostgreSQL у контейнері, HTTP через MockMvc; тут перевіряються запити читання і компонент аналітики в обох режимах (Awaitility для асинхронного) |
-| архітектурні | 9 | ArchUnit: правила залежностей між шарами і правила для `analytics` |
+| `core.domain` | 122 | звичайні JUnit/AssertJ без Spring і Mockito; репозиторії замінюють in-memory фейки `InMemoryOrderRepository` і `InMemoryEmployeeRepository` |
+| `core.application` | 100 | обробники команд на тих самих фейках (разом із перевіркою опублікованої події через `CollectingOrderEventPublisher`); Mockito лише для портів і обробників, які треба змусити кинути виняток; фіксований `Clock` |
+| `core.infrastructure` | 44 | адаптери без Spring-контексту: JWT, md5-підпис, розбір даних Poster |
+| `core.presentation` (юніт) | 4 | `GlobalExceptionHandler` через standalone MockMvc |
+| `core` інтеграційні | 43 | `@Tag("integration")`, весь застосунок на PostgreSQL у контейнері, HTTP через MockMvc |
+| `analytics.domain` | 11 | `OrderTiming` (найраніший старт, найпізніша готовність, тривалості) і `ModifierTally` без Spring |
+| `analytics.infrastructure.acl` | 7 | `CoreEventTranslator`: кожна подія Core → правильний внутрішній факт |
+| `analytics` інтеграційні | 19 | події в реєстрі Modulith, таблиці `analytics_*`, `GET /api/stats`, відставання, збій, повторна доставка (Awaitility) |
+| `ModularityTest` | 2 | `ApplicationModules.verify()` і запис документації Modulith (PlantUML) |
+| `ArchitectureTest` | 13 | ArchUnit: шари в кожному модулі і залежності між модулями |
 
-Без інтеграційних тестів виконується 279 тестів. Тести домену (122) разом із запуском Maven тривають близько 4,6 с, усі юніт-тести — близько 11 с, `ArchitectureTest` окремо — близько 5,3 с, повний `./mvnw verify` — близько 39 с (по одному вимірюванню). Більша частина цього часу — старт Maven і JVM.
+Без інтеграційних тестів виконується 303 тести. Тести доменів (`core.domain` і `analytics.domain`, 133 тести) разом із запуском Maven тривають близько 4,3 с, усі юніт-тести — близько 9,3 с, `ArchitectureTest` з `ModularityTest` — близько 6,5 с, повний `./mvnw verify` — близько 33 с (по одному вимірюванню). Більша частина цього часу — старт Maven і JVM.
 
 Інтеграційні тести успадковують `AbstractIntegrationTest`: Spring-контекст і контейнер стартують один раз, перед кожним тестом таблиці очищаються (спершу `orders`, потім `employees`) через Spring Data репозиторії `SpringDataOrderRepository` і `SpringDataEmployeeRepository`. Підписані вебхуки Poster для тестів будує `SignedWebhooks` (JSON-тіло і `verify` = md5 із секретом із `PosterProperties`).
 
 ### Що покриває кожен клас
 
-**`domain`** (122)
+**`core.domain`** (122)
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
@@ -173,7 +194,7 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `EmployeeFactoryTest` | 9 | обрізання імені, межа 100 символів, порожнє ім'я, дубль email у іншому регістрі |
 | `OrderRepositoryTest` | 2 | `getById` повертає збережене замовлення, невідомий id → `OrderNotFoundError` |
 
-**`application`** (100): команди
+**`core.application`** (100): команди
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
@@ -183,14 +204,14 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `RegisterEmployeeHandlerTest` | 6 | повертається id нового працівника; нормалізація email і імені; зберігається хеш із `PasswordHasher`; дубль email в іншому регістрі → `DuplicateEmailError`; некоректний email або порожнє ім'я |
 | `ProcessPosterWebhookHandlerTest` | 19 | невірний підпис → `InvalidWebhookSignatureError`; інший `object`; `removed` (існуюче, видане, невідоме); уже існуюче замовлення; чек не оплачений; значення чека в команді `CreateOrderFromPoster`; стан репозиторію після вебхука; помилки домену, Poster і БД не ламають відповідь |
 
-**`application`**: запити
+**`core.application`**: запити
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
 | `LoginHandlerTest` | 4 | токен для нормалізованого email; неправильний пароль, невідомий і некоректний email → `InvalidCredentialsError` |
 | `GetBoardHandlerTest` | 12 | групування рядків на `preparing` і `ready`; `minutesLeft` округлюється вгору і не буває менше 0 (фейк `BoardReadRepository`) |
 
-**`infrastructure`** (44)
+**`core.infrastructure`** (44)
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
@@ -198,7 +219,7 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `Md5WebhookSignatureVerifierTest` | 14 | вірний підпис (з `data` і без), приклад із `docs/api.md`, регістр hex, невірний або відсутній підпис і підписані поля |
 | `PosterClientAdapterTest` | 19 | чек не закрито або не оплачено → порожньо; розбір `date_close`, `num`, `modificator_name`, порожнього коментаря; помилкові дані → `PosterDataError` |
 
-**`presentation`** (4 юніт + 43 інтеграційні)
+**`core.presentation`** (4 юніт + 43 інтеграційні)
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
@@ -211,12 +232,14 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `BoardQueryIntegrationTest` | 3 | `minutesLeft` відповідає `estimatedReadyAt`; скасоване не показується; після видачі замовлення зникає з обох груп |
 | `QueueboardApplicationTests` | 1 | `contextLoads`: контекст стартує, схема Liquibase проходить валідацію Hibernate |
 
-**`analytics`** (22 інтеграційні, базовий клас `AbstractAnalyticsTest` очищає таблиці `analytics_*` і чекає, поки спорожніє виконавець аналітики)
+**`analytics`** (11 доменних, 7 ACL, 19 інтеграційних; базовий клас `AbstractAnalyticsTest` очищає таблиці `analytics_*` і реєстр `event_publication` та чекає, поки всі публікації будуть доставлені)
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
-| `OrderAnalyticsIntegrationTest` | 12 | кожен тип події оновлює свої таблиці; перший `startedAt` зберігається, останній `readyAt` перемагає; повторна подія нічого не змінює (і не перезаписує новіший стан); `GET /api/stats` за сценарієм доби (середні, дії, топ модифікаторів), порожній день, межа доби, дата за замовчуванням, 400 для поганої дати, 401 без токена |
-| `AnalyticsSyncModeIntegrationTest` | 5 | `app.analytics.mode=sync`: статистика видна одразу, затримка 300 мс подовжує `POST /ready`, `fail=true` не ламає команду (200, READY, статистика без змін), невдала команда нічого не пише |
-| `AnalyticsAsyncModeIntegrationTest` | 5 | типовий режим: статистика з'являється згодом (Awaitility), затримка 1 с не гальмує `POST /ready` (< 500 мс), `fail=true` не впливає на замовлення, невдала команда (409) нічого не пише |
+| `OrderTimingTest` | 8 | найраніший `start` і найпізніший `complete` незалежно від порядку; `cookingTime`, `waitTime`, `estimateError` (знак), порожні тривалості без однієї з міток; `reconstitute` |
+| `ModifierTallyTest` | 3 | порожній модифікатор і нестрога кількість відхиляються |
+| `CoreEventTranslatorTest` | 7 | `OrderAccepted` → `OrderReceived` (обіцяний час, лічильники модифікаторів із урахуванням кількості), п'ять статусних подій → `ActionPerformed` з потрібною дією і часом |
+| `OrderStatsIntegrationTest` | 13 | кожен тип події оновлює свої таблиці; найраніший старт, найпізніша готовність; події до прийняття замовлення; дубль події і запізнілий дубль нічого не псують; `GET /api/stats` за сценарієм доби, порожній день, межа доби, дата за замовчуванням, 400, 401 |
+| `EventualConsistencyIntegrationTest` | 6 | статистика з'являється згодом; доставлена публікація завершена; затримка 1 с не гальмує `POST /ready`; `fail=true` лишає публікацію `FAILED`, замовлення не страждає; після `fail=false` і `resubmitIncompletePublications` статистика наздоганяє; невдала команда (409) нічого не публікує |
 
-**Архітектура** (9): `ArchitectureTest` перевіряє, що `domain` залежить лише від `java..` і `domain..`, `application` не залежить від `infrastructure` і `presentation`, `presentation` не залежить від `infrastructure` і від доменних репозиторіїв (`OrderRepository`, `EmployeeRepository`), `infrastructure` не залежить від `presentation`; `analytics` залежить лише від Java, Spring, Jakarta, Lombok, slf4j, себе і `application.order.event`; `domain`, `application` і `presentation` не залежать від `analytics`; `analytics.api` використовує лише `infrastructure.event`.
+**Архітектура** (13 правил `ArchitectureTest` і 2 тести `ModularityTest`): `core.domain` залежить лише від `java..` і себе, `core.application` не залежить від `core.infrastructure` і `core.presentation`, `core.presentation` не залежить від `core.infrastructure` і доменних репозиторіїв, `core.infrastructure` не залежить від `core.presentation`; ті самі правила для `analytics.domain`, `analytics.application`, `analytics.presentation` (лише `api`), `analytics.infrastructure`; ніщо в `core` не залежить від `analytics`; `core.events` використовує лише `analytics.infrastructure.acl`, решта `core` для `analytics` закрита. `ModularityTest` додатково перевіряє публічні контракти (`@NamedInterface`) і відсутність циклів.

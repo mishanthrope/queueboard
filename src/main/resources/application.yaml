@@ -18,6 +18,9 @@ spring:
         default_batch_fetch_size: 50
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+  modulith:
+    events:
+      republish-outstanding-events-on-restart: true
 
 app:
   jwt:
@@ -33,6 +36,5 @@ app:
       grill: PT5M
       grill-capacity: 5
   analytics:
-    mode: ${ANALYTICS_MODE:async}
     simulated-delay: PT0S
     fail: false
