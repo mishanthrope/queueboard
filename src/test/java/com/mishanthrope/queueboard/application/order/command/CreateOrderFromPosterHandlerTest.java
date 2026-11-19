@@ -4,6 +4,8 @@ import static com.mishanthrope.queueboard.application.order.OrderFixtures.seed;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.mishanthrope.queueboard.application.order.CollectingOrderEventPublisher;
+import com.mishanthrope.queueboard.application.order.event.OrderAccepted;
 import com.mishanthrope.queueboard.domain.order.DuplicatePosterCheckError;
 import com.mishanthrope.queueboard.domain.order.InMemoryOrderRepository;
 import com.mishanthrope.queueboard.domain.order.InvalidOrderError;
@@ -34,16 +36,19 @@ class CreateOrderFromPosterHandlerTest {
     private static final Duration ONE_ITEM_TIME = Duration.ofMinutes(15);
 
     private InMemoryOrderRepository repository;
+    private CollectingOrderEventPublisher events;
     private CreateOrderFromPosterHandler handler;
 
     @BeforeEach
     void setUp() {
         repository = new InMemoryOrderRepository();
+        events = new CollectingOrderEventPublisher();
         var settings = new KitchenSettings(
                 Duration.ofMinutes(7), Duration.ofMinutes(3), Duration.ofMinutes(5), 5);
         var factory = new OrderFactory(
                 repository, new PrepTimeCalculator(settings), SKEW, Clock.fixed(NOW, KYIV));
-        handler = new CreateOrderFromPosterHandler(repository, factory);
+        handler = new CreateOrderFromPosterHandler(
+                repository, factory, Clock.fixed(NOW, KYIV), events);
     }
 
     private static CreateOrderFromPoster.Line item(
@@ -196,5 +201,41 @@ class CreateOrderFromPosterHandlerTest {
 
         assertThat(repository.findByPosterCheckId(101L).orElseThrow().getEstimatedReadyAt())
                 .isEqualTo(NOW.plus(ONE_ITEM_TIME).plus(ONE_ITEM_TIME));
+    }
+
+    @Test
+    void handle_publishesOrderAcceptedWithEverythingTheSubscriberNeeds() {
+        var order = create(NOW, null, List.of(
+                item("Шаурма", 2, "Без цибулі", "Гострий"), item("Лаваш", 1)));
+
+        var event = (OrderAccepted) events.single();
+        assertThat(event.orderId()).isEqualTo(order.getId());
+        assertThat(event.displayNumber()).isEqualTo(order.getDisplayNumber());
+        assertThat(event.posterCheckId()).isEqualTo(100L);
+        assertThat(event.paidAt()).isEqualTo(NOW);
+        assertThat(event.estimatedReadyAt()).isEqualTo(order.getEstimatedReadyAt());
+        assertThat(event.occurredAt()).isEqualTo(NOW);
+        assertThat(event.eventId()).isNotNull();
+        assertThat(event.items()).containsExactly(
+                new OrderAccepted.Item("Шаурма", 2, List.of("Без цибулі", "Гострий")),
+                new OrderAccepted.Item("Лаваш", 1, List.of()));
+    }
+
+    @Test
+    void handle_duplicateCheck_publishesOnlyTheFirstEvent() {
+        create(NOW, null, oneItem());
+
+        assertThatThrownBy(() -> create(NOW, null, oneItem()))
+                .isInstanceOf(DuplicatePosterCheckError.class);
+
+        assertThat(events.events()).hasSize(1);
+    }
+
+    @Test
+    void handle_invalidOrder_publishesNoEvent() {
+        assertThatThrownBy(() -> create(NOW, "x".repeat(501), oneItem()))
+                .isInstanceOf(InvalidOrderError.class);
+
+        assertThat(events.events()).isEmpty();
     }
 }

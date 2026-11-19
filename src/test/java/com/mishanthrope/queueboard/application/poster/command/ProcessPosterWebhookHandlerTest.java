@@ -84,8 +84,8 @@ class ProcessPosterWebhookHandlerTest {
                 repository, new PrepTimeCalculator(settings), Duration.ofMinutes(2), CLOCK);
         return new ProcessPosterWebhookHandler(
                 signatureVerifier, posterClient, repository,
-                new CancelOrderHandler(repository, CLOCK),
-                new CreateOrderFromPosterHandler(repository, factory));
+                new CancelOrderHandler(repository, CLOCK, event -> { }),
+                new CreateOrderFromPosterHandler(repository, factory, CLOCK, event -> { }));
     }
 
     private static ProcessPosterWebhook webhook(String object, String action) {

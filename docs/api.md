@@ -47,6 +47,14 @@
 |---|---|---|---|
 | GET | /api/board | UC-10 | 200 |
 
+## Статистика
+
+| Метод | Шлях | Юзкейс | Успіх | Помилки |
+|---|---|---|---|---|
+| GET | /api/stats?date=2026-11-17 | UC-12 | 200 | 400, 401 |
+
+`date` необов'язковий (`YYYY-MM-DD`), за замовчуванням сьогодні в часовій зоні сервера. Доба — півінтервал `[00:00, 00:00 наступного дня)`.
+
 ## Приклади тіл
 
 `POST /api/webhooks/poster` (формат реального Poster; `time` — рядок, `verify` — md5-підпис):
@@ -88,5 +96,20 @@
 {
   "preparing": [ { "displayNumber": 14, "minutesLeft": 6 }, { "displayNumber": 15, "minutesLeft": 9 } ],
   "ready":     [ { "displayNumber": 12 }, { "displayNumber": 13 } ]
+}
+```
+
+`GET /api/stats?date=2026-11-17` → 200 (середні — у хвилинах з одним знаком, `null`, якщо за день не було готових замовлень):
+
+```json
+{
+  "ordersAccepted": 5,
+  "ordersIssued": 2,
+  "ordersCancelled": 2,
+  "averageCookingMinutes": 0.1,
+  "averageWaitMinutes": 0.2,
+  "averageEstimateErrorMinutes": -66.9,
+  "cookActions": { "COOKING_STARTED": 3, "READY": 3, "ISSUED": 2, "CANCELLED": 2, "RESTORED": 1 },
+  "topModifiers": [ { "modifier": "без цибулі", "times": 5 }, { "modifier": "сир", "times": 3 } ]
 }
 ```

@@ -55,6 +55,7 @@ Java 21, Spring Boot 4 (Web MVC, Data JPA, Validation, Security), PostgreSQL, Li
 | `JWT_EXPIRATION` | `PT8H` | Час життя токена (ISO-8601 duration) |
 | `POSTER_APPLICATION_SECRET` | `local-dev-poster-secret` | Секрет застосунку Poster для перевірки підпису вебхуків |
 | `PAID_AT_MAX_SKEW` | `PT2M` | Наскільки `paidAt` може випереджати годинник сервера |
+| `ANALYTICS_MODE` | `async` | Спосіб передачі подій аналітиці: `sync` або `async` (див. «Статистика») |
 | `API_URL` | `http://localhost:8080` | Адреса застосунку (лише для `scripts/poster-mock.sh`) |
 
 Пароль БД у `docker-compose` застосовується під час першого створення тому; щоб змінити його пізніше, видаліть том: `docker compose down -v`.
@@ -94,6 +95,24 @@ curl -s $API/api/board
 
 Кожне замовлення отримує `estimatedReadyAt` за моделлю черги з одним кухарем (опис і алгоритм — у [`docs/use-cases.md`](docs/use-cases.md)). Кнопки «+» / «−» зсувають час усіх активних замовлень: `PATCH /api/orders/prep-time` з тілом `{"deltaMinutes": 5}` (ціле ненульове від −30 до 30) → 204. Параметри моделі задаються в `application.yaml` під `app.orders.prep-time`: `overhead` (7 хв), `wrap-per-item` (3 хв), `grill` (5 хв), `grill-capacity` (5).
 
+## Статистика
+
+`GET /api/stats?date=2026-11-17` (токен потрібен, `date` необов'язковий, за замовчуванням сьогодні) повертає за добу: кількість прийнятих, виданих і скасованих замовлень, середній час приготування, очікування і похибку оцінки (хвилини), кількість дій кухаря (`COOKING_STARTED`, `READY`, `ISSUED`, `CANCELLED`, `RESTORED`) і до 10 найпопулярніших модифікаторів. Детально — у [`docs/api.md`](docs/api.md) (UC-12).
+
+Статистику збирає окремий компонент `analytics`, який отримує події від обробників команд (`application/order/event`). Спосіб доставки перемикається в `application.yaml` або змінною `ANALYTICS_MODE`:
+
+| Налаштування | За замовчуванням | Опис |
+|---|---|---|
+| `app.analytics.mode` | `async` | `async` — подія йде після коміту команди в окремому потоці, відповідь API не чекає на аналітику; `sync` — аналітика викликається прямо в потоці команди, збій аналітики лише логується |
+| `app.analytics.simulated-delay` | `PT0S` | Штучна затримка аналітики (для порівняння режимів) |
+| `app.analytics.fail` | `false` | Аналітика кидає виняток перед записом |
+
+```bash
+java -jar target/queueboard-0.0.1-SNAPSHOT.jar --app.analytics.mode=sync --app.analytics.simulated-delay=PT0.5S
+```
+
+Порівняння режимів з вимірюваннями — у [`docs/analysis/lab4.md`](docs/analysis/lab4.md).
+
 ## Мок Poster
 
 Скрипт надсилає N сигнальних вебхуків (`action: changed`, нові випадкові `object_id`) на `POST /api/webhooks/poster`. Кожен вебхук підписаний: `verify` = md5 від `account;object;object_id;action;time;secret` рахується через `md5sum`. Дані чеків (позиції, модифікатори, коментар) віддає `MockPosterApi`: для одного `object_id` завжди той самий чек. Логін і працівник не потрібні. Скрипт завантажує `.env` з кореня проєкту (`POSTER_APPLICATION_SECRET`, `API_URL`; значення з `.env` перекривають змінні оточення, `API_URL` за замовчуванням `http://localhost:8080`). Вебхук приймає лише `Content-Type: application/json`. Для кожного виклику виводиться HTTP-статус.
@@ -123,18 +142,18 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 
 ### Піраміда тестів
 
-Усього 304 тести (рахунок за звітами surefire):
+Усього 344 тести (рахунок за звітами surefire):
 
 | Шар | Тестів | Як тестується |
 |---|---|---|
 | `domain` | 122 | звичайні JUnit/AssertJ без Spring і Mockito; репозиторії замінюють in-memory фейки `InMemoryOrderRepository` і `InMemoryEmployeeRepository` |
-| `application` | 85 | обробники команд на тих самих фейках; Mockito лише для `PasswordHasher`, `TokenService`, `PosterClient`, `WebhookSignatureVerifier` і обробників, які треба змусити кинути виняток; фіксований `Clock` |
+| `application` | 100 | обробники команд на тих самих фейках; Mockito лише для `PasswordHasher`, `TokenService`, `PosterClient`, `WebhookSignatureVerifier` і обробників, які треба змусити кинути виняток; фіксований `Clock` |
 | `infrastructure` | 44 | адаптери без Spring-контексту: JWT, md5-підпис, розбір даних Poster |
 | `presentation` (юніт) | 4 | `GlobalExceptionHandler` через standalone MockMvc |
-| інтеграційні | 43 | `@Tag("integration")`, весь застосунок на PostgreSQL у контейнері, HTTP через MockMvc; тут перевіряються запити читання |
-| архітектурні | 6 | ArchUnit: правила залежностей між шарами |
+| інтеграційні | 65 | `@Tag("integration")`, весь застосунок на PostgreSQL у контейнері, HTTP через MockMvc; тут перевіряються запити читання і компонент аналітики в обох режимах (Awaitility для асинхронного) |
+| архітектурні | 9 | ArchUnit: правила залежностей між шарами і правила для `analytics` |
 
-Без інтеграційних тестів виконується 261 тест. Тести домену (122) разом із запуском Maven тривають близько 5 с (два вимірювання: 4,3 і 5,7 с), усі юніт-тести — близько 9 с, `ArchitectureTest` окремо — близько 5,3 с, повний `./mvnw verify` — близько 26 с. Більша частина цього часу — старт Maven і JVM.
+Без інтеграційних тестів виконується 279 тестів. Тести домену (122) разом із запуском Maven тривають близько 4,6 с, усі юніт-тести — близько 11 с, `ArchitectureTest` окремо — близько 5,3 с, повний `./mvnw verify` — близько 39 с (по одному вимірюванню). Більша частина цього часу — старт Maven і JVM.
 
 Інтеграційні тести успадковують `AbstractIntegrationTest`: Spring-контекст і контейнер стартують один раз, перед кожним тестом таблиці очищаються (спершу `orders`, потім `employees`) через Spring Data репозиторії `SpringDataOrderRepository` і `SpringDataEmployeeRepository`. Підписані вебхуки Poster для тестів будує `SignedWebhooks` (JSON-тіло і `verify` = md5 із секретом із `PosterProperties`).
 
@@ -154,13 +173,13 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `EmployeeFactoryTest` | 9 | обрізання імені, межа 100 символів, порожнє ім'я, дубль email у іншому регістрі |
 | `OrderRepositoryTest` | 2 | `getById` повертає збережене замовлення, невідомий id → `OrderNotFoundError` |
 
-**`application`** (85): команди
+**`application`** (100): команди
 
 | Клас | Тестів | Що перевіряє |
 |---|---|---|
-| `OrderStatusCommandsTest` | 14 | `StartCooking`, `MarkReady`, `IssueOrder`, `CancelOrder`, `RestoreOrder`: стан замовлення в репозиторії після команди (статус і мітка), заборонена дія → `IllegalStatusTransitionError` без змін, невідомий id → `OrderNotFoundError`, чужі замовлення не змінюються |
+| `OrderStatusCommandsTest` | 26 | `StartCooking`, `MarkReady`, `IssueOrder`, `CancelOrder`, `RestoreOrder`: стан замовлення в репозиторії після команди (статус і мітка), заборонена дія → `IllegalStatusTransitionError` без змін, невідомий id → `OrderNotFoundError`, чужі замовлення не змінюються; кожна команда публікує свою подію з правильними полями (`CollectingOrderEventPublisher`), невдала команда подій не публікує |
 | `ShiftPrepTimeHandlerTest` | 4 | зсув `estimatedReadyAt` для NEW і COOKING в обидва боки; READY, ISSUED, CANCELLED не змінюються; порожня черга |
-| `CreateOrderFromPosterHandlerTest` | 26 | відмови (id чека, `paidAt`, коментар, порожні позиції, рядок команди з порушенням правил позиції) і межові значення; дубль `posterCheckId`; збережені позиції; `displayNumber`; `estimatedReadyAt` (порожня черга, хвіст у минулому, у майбутньому, друге замовлення після першого) |
+| `CreateOrderFromPosterHandlerTest` | 29 | відмови (id чека, `paidAt`, коментар, порожні позиції, рядок команди з порушенням правил позиції) і межові значення; дубль `posterCheckId`; збережені позиції; `displayNumber`; `estimatedReadyAt` (порожня черга, хвіст у минулому, у майбутньому, друге замовлення після першого); подія `OrderAccepted` з позиціями й часом готовності, дубль і помилка подій не публікують |
 | `RegisterEmployeeHandlerTest` | 6 | повертається id нового працівника; нормалізація email і імені; зберігається хеш із `PasswordHasher`; дубль email в іншому регістрі → `DuplicateEmailError`; некоректний email або порожнє ім'я |
 | `ProcessPosterWebhookHandlerTest` | 19 | невірний підпис → `InvalidWebhookSignatureError`; інший `object`; `removed` (існуюче, видане, невідоме); уже існуюче замовлення; чек не оплачений; значення чека в команді `CreateOrderFromPoster`; стан репозиторію після вебхука; помилки домену, Poster і БД не ламають відповідь |
 
@@ -192,4 +211,12 @@ scripts/poster-mock.sh 3 --duplicate --removed   # + action "removed" для о�
 | `BoardQueryIntegrationTest` | 3 | `minutesLeft` відповідає `estimatedReadyAt`; скасоване не показується; після видачі замовлення зникає з обох груп |
 | `QueueboardApplicationTests` | 1 | `contextLoads`: контекст стартує, схема Liquibase проходить валідацію Hibernate |
 
-**Архітектура** (6): `ArchitectureTest` перевіряє, що `domain` залежить лише від `java..` і `domain..`, `application` не залежить від `infrastructure` і `presentation`, `presentation` не залежить від `infrastructure` і від доменних репозиторіїв (`OrderRepository`, `EmployeeRepository`), `infrastructure` не залежить від `presentation`.
+**`analytics`** (22 інтеграційні, базовий клас `AbstractAnalyticsTest` очищає таблиці `analytics_*` і чекає, поки спорожніє виконавець аналітики)
+
+| Клас | Тестів | Що перевіряє |
+|---|---|---|
+| `OrderAnalyticsIntegrationTest` | 12 | кожен тип події оновлює свої таблиці; перший `startedAt` зберігається, останній `readyAt` перемагає; повторна подія нічого не змінює (і не перезаписує новіший стан); `GET /api/stats` за сценарієм доби (середні, дії, топ модифікаторів), порожній день, межа доби, дата за замовчуванням, 400 для поганої дати, 401 без токена |
+| `AnalyticsSyncModeIntegrationTest` | 5 | `app.analytics.mode=sync`: статистика видна одразу, затримка 300 мс подовжує `POST /ready`, `fail=true` не ламає команду (200, READY, статистика без змін), невдала команда нічого не пише |
+| `AnalyticsAsyncModeIntegrationTest` | 5 | типовий режим: статистика з'являється згодом (Awaitility), затримка 1 с не гальмує `POST /ready` (< 500 мс), `fail=true` не впливає на замовлення, невдала команда (409) нічого не пише |
+
+**Архітектура** (9): `ArchitectureTest` перевіряє, що `domain` залежить лише від `java..` і `domain..`, `application` не залежить від `infrastructure` і `presentation`, `presentation` не залежить від `infrastructure` і від доменних репозиторіїв (`OrderRepository`, `EmployeeRepository`), `infrastructure` не залежить від `presentation`; `analytics` залежить лише від Java, Spring, Jakarta, Lombok, slf4j, себе і `application.order.event`; `domain`, `application` і `presentation` не залежать від `analytics`; `analytics.api` використовує лише `infrastructure.event`.

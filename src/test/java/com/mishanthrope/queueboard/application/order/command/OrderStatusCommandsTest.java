@@ -4,6 +4,12 @@ import static com.mishanthrope.queueboard.application.order.OrderFixtures.seed;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.mishanthrope.queueboard.application.order.CollectingOrderEventPublisher;
+import com.mishanthrope.queueboard.application.order.event.CookingStarted;
+import com.mishanthrope.queueboard.application.order.event.OrderCancelled;
+import com.mishanthrope.queueboard.application.order.event.OrderIssued;
+import com.mishanthrope.queueboard.application.order.event.OrderReady;
+import com.mishanthrope.queueboard.application.order.event.OrderRestored;
 import com.mishanthrope.queueboard.domain.order.IllegalStatusTransitionError;
 import com.mishanthrope.queueboard.domain.order.InMemoryOrderRepository;
 import com.mishanthrope.queueboard.domain.order.Order;
@@ -26,6 +32,7 @@ class OrderStatusCommandsTest {
     private static final Instant ESTIMATE = NOW.plusSeconds(600);
 
     private InMemoryOrderRepository repository;
+    private CollectingOrderEventPublisher events;
     private StartCookingHandler startCooking;
     private MarkReadyHandler markReady;
     private IssueOrderHandler issueOrder;
@@ -35,12 +42,13 @@ class OrderStatusCommandsTest {
     @BeforeEach
     void setUp() {
         repository = new InMemoryOrderRepository();
+        events = new CollectingOrderEventPublisher();
         Clock clock = Clock.fixed(NOW, ZoneId.of("Europe/Kyiv"));
-        startCooking = new StartCookingHandler(repository, clock);
-        markReady = new MarkReadyHandler(repository, clock);
-        issueOrder = new IssueOrderHandler(repository, clock);
-        cancelOrder = new CancelOrderHandler(repository, clock);
-        restoreOrder = new RestoreOrderHandler(repository, clock);
+        startCooking = new StartCookingHandler(repository, clock, events);
+        markReady = new MarkReadyHandler(repository, clock, events);
+        issueOrder = new IssueOrderHandler(repository, clock, events);
+        cancelOrder = new CancelOrderHandler(repository, clock, events);
+        restoreOrder = new RestoreOrderHandler(repository, clock, events);
     }
 
     private long seeded(OrderStatus status) {
@@ -169,5 +177,97 @@ class OrderStatusCommandsTest {
         assertThatThrownBy(() -> call.accept(this))
                 .isInstanceOf(OrderNotFoundError.class)
                 .hasMessage("Order 99 not found");
+    }
+
+    @Test
+    void startCooking_publishesCookingStartedWithTimeAndOrderData() {
+        long id = seeded(OrderStatus.NEW);
+
+        startCooking.handle(new StartCooking(id));
+
+        var event = (CookingStarted) events.single();
+        assertThat(event.orderId()).isEqualTo(id);
+        assertThat(event.displayNumber()).isEqualTo(1);
+        assertThat(event.occurredAt()).isEqualTo(NOW);
+        assertThat(event.startedAt()).isEqualTo(NOW);
+        assertThat(event.eventId()).isNotNull();
+    }
+
+    @Test
+    void markReady_publishesOrderReady() {
+        long id = seeded(OrderStatus.COOKING);
+
+        markReady.handle(new MarkReady(id));
+
+        var event = (OrderReady) events.single();
+        assertThat(event.orderId()).isEqualTo(id);
+        assertThat(event.readyAt()).isEqualTo(NOW);
+        assertThat(event.occurredAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void issue_publishesOrderIssued() {
+        long id = seeded(OrderStatus.READY);
+
+        issueOrder.handle(new IssueOrder(id));
+
+        var event = (OrderIssued) events.single();
+        assertThat(event.orderId()).isEqualTo(id);
+        assertThat(event.issuedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void cancel_publishesOrderCancelled() {
+        long id = seeded(OrderStatus.NEW);
+
+        cancelOrder.handle(new CancelOrder(id));
+
+        var event = (OrderCancelled) events.single();
+        assertThat(event.orderId()).isEqualTo(id);
+        assertThat(event.cancelledAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void restore_publishesOrderRestored() {
+        long id = seeded(OrderStatus.CANCELLED);
+
+        restoreOrder.handle(new RestoreOrder(id));
+
+        var event = (OrderRestored) events.single();
+        assertThat(event.orderId()).isEqualTo(id);
+        assertThat(event.restoredAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void eachCommand_publishesEventWithOwnId() {
+        long id = seeded(OrderStatus.NEW);
+
+        startCooking.handle(new StartCooking(id));
+        markReady.handle(new MarkReady(id));
+
+        assertThat(events.events()).hasSize(2);
+        assertThat(events.events().get(0).eventId())
+                .isNotEqualTo(events.events().get(1).eventId());
+    }
+
+    @Test
+    void failedCommand_publishesNoEvent() {
+        long id = seeded(OrderStatus.NEW);
+
+        assertThatThrownBy(() -> issueOrder.handle(new IssueOrder(id)))
+                .isInstanceOf(IllegalStatusTransitionError.class);
+        assertThatThrownBy(() -> markReady.handle(new MarkReady(id)))
+                .isInstanceOf(IllegalStatusTransitionError.class);
+
+        assertThat(events.events()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("commandsOnUnknownOrder")
+    void command_withUnknownId_publishesNoEvent(
+            String name, Consumer<OrderStatusCommandsTest> call) {
+        assertThatThrownBy(() -> call.accept(this)).isInstanceOf(OrderNotFoundError.class);
+
+        assertThat(events.events()).isEmpty();
     }
 }

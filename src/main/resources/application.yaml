@@ -32,3 +32,7 @@ app:
       wrap-per-item: PT3M
       grill: PT5M
       grill-capacity: 5
+  analytics:
+    mode: ${ANALYTICS_MODE:async}
+    simulated-delay: PT0S
+    fail: false

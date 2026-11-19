@@ -17,6 +17,11 @@ class ArchitectureTest {
     private static final String APPLICATION = "com.mishanthrope.queueboard.application..";
     private static final String INFRASTRUCTURE = "com.mishanthrope.queueboard.infrastructure..";
     private static final String PRESENTATION = "com.mishanthrope.queueboard.presentation..";
+    private static final String ANALYTICS = "com.mishanthrope.queueboard.analytics..";
+    private static final String ANALYTICS_API = "com.mishanthrope.queueboard.analytics.api..";
+    private static final String EVENTS = "com.mishanthrope.queueboard.application.order.event..";
+    private static final String INFRASTRUCTURE_EVENT =
+            "com.mishanthrope.queueboard.infrastructure.event..";
 
     @ArchTest
     static final ArchRule domainDependsOnlyOnJavaAndItself = classes()
@@ -50,4 +55,21 @@ class ArchitectureTest {
             .haveFullyQualifiedName("com.mishanthrope.queueboard.domain.order.OrderRepository")
             .orShould().dependOnClassesThat().haveFullyQualifiedName(
                     "com.mishanthrope.queueboard.domain.employee.EmployeeRepository");
+
+    @ArchTest
+    static final ArchRule analyticsDependsOnlyOnItsAllowedPackages = classes()
+            .that().resideInAPackage(ANALYTICS)
+            .should().onlyDependOnClassesThat().resideInAnyPackage(
+                    "java..", "org.springframework..", "jakarta..", "lombok..", "org.slf4j..",
+                    ANALYTICS, EVENTS);
+
+    @ArchTest
+    static final ArchRule coreDoesNotDependOnAnalytics = noClasses()
+            .that().resideInAnyPackage(DOMAIN, APPLICATION, PRESENTATION)
+            .should().dependOnClassesThat().resideInAPackage(ANALYTICS);
+
+    @ArchTest
+    static final ArchRule onlyInfrastructureEventUsesAnalyticsApi = noClasses()
+            .that().resideOutsideOfPackages(ANALYTICS, INFRASTRUCTURE_EVENT)
+            .should().dependOnClassesThat().resideInAPackage(ANALYTICS_API);
 }
